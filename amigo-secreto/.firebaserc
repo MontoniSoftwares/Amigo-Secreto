@@ -1,0 +1,8 @@
+{
+  "projects": {
+    "default": "amigo-secreto-31525",
+    "firebase use --add": "amigo-secreto-31525"
+  },
+  "targets": {},
+  "etags": {}
+}
