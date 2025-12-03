@@ -32,7 +32,10 @@
         <div v-if="sorteios.length" class="sorteios-list">
           <select
             v-model="sorteioSelecionado"
-            @change="visualizarSorteio(sorteioSelecionado)"
+            @change="
+              sorteioSelecionado = $event.target.value;
+              visualizarSorteio($event.target.value);
+            "
           >
             <option value="">Selecione um sorteio para visualizar</option>
             <option v-for="s in sorteios" :key="s.id" :value="s.id">
@@ -103,7 +106,7 @@ import {
   query,
   setDoc,
 } from "firebase/firestore";
-import { ref } from "vue";
+import { onUnmounted, ref } from "vue";
 import { db } from "../firebase";
 
 export default {
@@ -119,17 +122,23 @@ export default {
     const sorteioSelecionado = ref(null);
     const carregandoSorteios = ref(false);
 
+    let unsubscribeSorteios = null;
+
     function validarSenha() {
       if (senha.value === "123") {
         logado.value = true;
         erroSenha.value = "";
-        carregarSorteios(); // Carrega sorteios automaticamente ao logar
+        carregarSorteios();
       } else {
         erroSenha.value = "Senha incorreta";
       }
     }
 
     function logout() {
+      if (unsubscribeSorteios) {
+        unsubscribeSorteios();
+        unsubscribeSorteios = null;
+      }
       logado.value = false;
       senha.value = "";
       mensagem.value = "";
@@ -148,12 +157,14 @@ export default {
     }
 
     async function carregarSorteios() {
+      if (unsubscribeSorteios) unsubscribeSorteios();
+
       carregandoSorteios.value = true;
       mensagem.value = "Carregando sorteios...";
 
       try {
         const q = query(collection(db, "sorteios"));
-        const unsubscribe = onSnapshot(q, (snapshot) => {
+        unsubscribeSorteios = onSnapshot(q, (snapshot) => {
           sorteios.value = snapshot.docs.map((doc) => ({
             id: doc.id,
             ...doc.data(),
@@ -161,9 +172,10 @@ export default {
           carregandoSorteios.value = false;
           if (snapshot.empty) {
             mensagem.value = "Nenhum sorteio encontrado.";
+          } else {
+            mensagem.value = "";
           }
         });
-        // Unsubscribe será gerenciado pelo Vue automaticamente
       } catch (e) {
         mensagem.value = "Erro ao carregar sorteios: " + e.message;
         carregandoSorteios.value = false;
@@ -173,12 +185,14 @@ export default {
     async function visualizarSorteio(sorteioId) {
       if (!sorteioId) {
         senhasGeradas.value = [];
+        sorteioSelecionado.value = null;
         return;
       }
 
       try {
         mensagem.value = "Carregando detalhes do sorteio...";
         senhasGeradas.value = [];
+        sorteioSelecionado.value = sorteioId;
 
         const resultadosRef = collection(
           db,
@@ -195,7 +209,9 @@ export default {
           });
         });
 
-        mensagem.value = `Sorteio carregado com sucesso! ${senhasGeradas.value.length} participantes.`;
+        mensagem.value = `Sorteio "${
+          sorteios.value.find((s) => s.id === sorteioId)?.nome
+        }" carregado! ${senhasGeradas.value.length} participantes.`;
       } catch (e) {
         mensagem.value = "Erro ao carregar sorteio: " + e.message;
       }
@@ -313,6 +329,13 @@ export default {
       }
     }
 
+    onUnmounted(() => {
+      if (unsubscribeSorteios) {
+        unsubscribeSorteios();
+        unsubscribeSorteios = null;
+      }
+    });
+
     return {
       senha,
       logado,
@@ -331,6 +354,7 @@ export default {
       visualizarSorteio,
       copiarSenha,
       baixarSenhasCSV,
+      formatarData,
     };
   },
 };
