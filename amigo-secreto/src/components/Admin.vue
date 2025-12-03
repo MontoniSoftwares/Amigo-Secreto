@@ -1,6 +1,6 @@
 <template>
   <div class="admin-container">
-    <h2>Área do Admin - Criar Sorteio</h2>
+    <h2>Área do Admin - Gerenciar Sorteios</h2>
     <div v-if="!logado">
       <input
         type="password"
@@ -11,34 +11,57 @@
       <p v-if="erroSenha" style="color: red">{{ erroSenha }}</p>
     </div>
     <div v-else>
-      <input v-model="nomeSorteio" placeholder="Nome do Sorteio" />
-      <textarea
-        v-model="participantes"
-        placeholder="Digite os nomes separados por vírgula"
-        rows="3"
-      ></textarea>
-      <button @click="criarSorteio">Criar Sorteio</button>
-      <p v-if="mensagem">{{ mensagem }}</p>
-      <button
-        @click="logout"
-        style="margin-top: 10px; background-color: #ccc; color: #333"
-      >
-        Sair do Admin
-      </button>
+      <!-- Formulário para criar novo sorteio -->
+      <div class="form-section">
+        <h3>Criar Novo Sorteio</h3>
+        <input v-model="nomeSorteio" placeholder="Nome do Sorteio" />
+        <textarea
+          v-model="participantes"
+          placeholder="Digite os nomes separados por vírgula"
+          rows="3"
+        ></textarea>
+        <button @click="criarSorteio">Criar Sorteio</button>
+      </div>
+
+      <!-- Listar sorteios existentes -->
+      <div class="form-section">
+        <h3>Sorteios Existentes</h3>
+        <button @click="carregarSorteios" :disabled="carregandoSorteios">
+          {{ carregandoSorteios ? "Carregando..." : "Listar Sorteios" }}
+        </button>
+        <div v-if="sorteios.length" class="sorteios-list">
+          <select
+            v-model="sorteioSelecionado"
+            @change="visualizarSorteio(sorteioSelecionado)"
+          >
+            <option value="">Selecione um sorteio para visualizar</option>
+            <option v-for="s in sorteios" :key="s.id" :value="s.id">
+              {{ s.nome }} ({{ formatarData(s.dataCriacao) }})
+            </option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Senhas do sorteio selecionado -->
       <div v-if="senhasGeradas.length">
-        <h3>Senhas dos Participantes</h3>
+        <h3 v-if="sorteioSelecionado">
+          Senhas: {{ sorteios.find((s) => s.id === sorteioSelecionado)?.nome }}
+        </h3>
+        <h3 v-else>Senhas dos Participantes</h3>
         <table>
           <thead>
             <tr>
               <th>Nome</th>
               <th>Senha</th>
-              <th>Copiar</th>
+              <th>Amigo Sorteado</th>
+              <th>Copiar Senha</th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="p in senhasGeradas" :key="p.nome">
               <td>{{ p.nome }}</td>
               <td style="font-family: monospace">{{ p.senha }}</td>
+              <td>{{ p.amigoSorteado }}</td>
               <td>
                 <button @click="copiarSenha(p.senha)">Copiar</button>
               </td>
@@ -52,12 +75,34 @@
           Baixar CSV das Senhas
         </button>
       </div>
+
+      <!-- Mensagens e logout -->
+      <p
+        v-if="mensagem"
+        :style="mensagem.includes('sucesso') ? 'color: green' : 'color: red'"
+      >
+        {{ mensagem }}
+      </p>
+      <button
+        @click="logout"
+        style="margin-top: 10px; background-color: #ccc; color: #333"
+      >
+        Sair do Admin
+      </button>
     </div>
   </div>
 </template>
 
 <script>
-import { addDoc, collection, doc, setDoc } from "firebase/firestore";
+import {
+  addDoc,
+  collection,
+  doc,
+  getDocs,
+  onSnapshot,
+  query,
+  setDoc,
+} from "firebase/firestore";
 import { ref } from "vue";
 import { db } from "../firebase";
 
@@ -70,11 +115,15 @@ export default {
     const participantes = ref("");
     const mensagem = ref("");
     const senhasGeradas = ref([]);
+    const sorteios = ref([]);
+    const sorteioSelecionado = ref(null);
+    const carregandoSorteios = ref(false);
 
     function validarSenha() {
       if (senha.value === "123") {
         logado.value = true;
         erroSenha.value = "";
+        carregarSorteios(); // Carrega sorteios automaticamente ao logar
       } else {
         erroSenha.value = "Senha incorreta";
       }
@@ -87,6 +136,69 @@ export default {
       nomeSorteio.value = "";
       participantes.value = "";
       senhasGeradas.value = [];
+      sorteios.value = [];
+      sorteioSelecionado.value = null;
+    }
+
+    function formatarData(data) {
+      if (!data) return "Data inválida";
+      return data.toDate
+        ? data.toDate().toLocaleDateString("pt-BR")
+        : "Sem data";
+    }
+
+    async function carregarSorteios() {
+      carregandoSorteios.value = true;
+      mensagem.value = "Carregando sorteios...";
+
+      try {
+        const q = query(collection(db, "sorteios"));
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+          sorteios.value = snapshot.docs.map((doc) => ({
+            id: doc.id,
+            ...doc.data(),
+          }));
+          carregandoSorteios.value = false;
+          if (snapshot.empty) {
+            mensagem.value = "Nenhum sorteio encontrado.";
+          }
+        });
+        // Unsubscribe será gerenciado pelo Vue automaticamente
+      } catch (e) {
+        mensagem.value = "Erro ao carregar sorteios: " + e.message;
+        carregandoSorteios.value = false;
+      }
+    }
+
+    async function visualizarSorteio(sorteioId) {
+      if (!sorteioId) {
+        senhasGeradas.value = [];
+        return;
+      }
+
+      try {
+        mensagem.value = "Carregando detalhes do sorteio...";
+        senhasGeradas.value = [];
+
+        const resultadosRef = collection(
+          db,
+          "sorteios",
+          sorteioId,
+          "resultados"
+        );
+        const snapshot = await getDocs(resultadosRef);
+
+        snapshot.forEach((doc) => {
+          senhasGeradas.value.push({
+            nome: doc.id,
+            ...doc.data(),
+          });
+        });
+
+        mensagem.value = `Sorteio carregado com sucesso! ${senhasGeradas.value.length} participantes.`;
+      } catch (e) {
+        mensagem.value = "Erro ao carregar sorteio: " + e.message;
+      }
     }
 
     function shuffle(array) {
@@ -130,15 +242,15 @@ export default {
     }
 
     function baixarSenhasCSV() {
-      let csv = "Nome,Senha\n";
+      let csv = "Nome,Senha,Amigo Sorteado\n";
       senhasGeradas.value.forEach((p) => {
-        csv += `"${p.nome}","${p.senha}"\n`;
+        csv += `"${p.nome}","${p.senha}","${p.amigoSorteado}"\n`;
       });
-      const blob = new Blob([csv], { type: "text/csv" });
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = "senhas_amigo_secreto.csv";
+      a.download = `senhas_${sorteioSelecionado.value || "sorteio"}.csv`;
       a.click();
       URL.revokeObjectURL(url);
     }
@@ -181,7 +293,11 @@ export default {
             senha: senhaGerada,
           });
 
-          senhasGeradas.value.push({ nome: p, senha: senhaGerada });
+          senhasGeradas.value.push({
+            nome: p,
+            senha: senhaGerada,
+            amigoSorteado: amigo,
+          });
         }
         mensagem.value = "Sorteio criado com sucesso!";
         nomeSorteio.value = "";
@@ -198,10 +314,15 @@ export default {
       nomeSorteio,
       participantes,
       mensagem,
+      senhasGeradas,
+      sorteios,
+      sorteioSelecionado,
+      carregandoSorteios,
       validarSenha,
       logout,
       criarSorteio,
-      senhasGeradas,
+      carregarSorteios,
+      visualizarSorteio,
       copiarSenha,
       baixarSenhasCSV,
     };
@@ -211,13 +332,19 @@ export default {
 
 <style scoped>
 .admin-container {
-  max-width: 300px;
+  max-width: 600px;
   margin: 32px auto 0 auto;
   padding: 25px;
   box-sizing: border-box;
 }
+.form-section {
+  margin-bottom: 25px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid #eee;
+}
 input,
-textarea {
+textarea,
+select {
   margin: 10px 0;
   width: 100%;
   padding: 10px 12px;
@@ -234,7 +361,8 @@ textarea::placeholder {
   opacity: 0.6;
 }
 input:focus,
-textarea:focus {
+textarea:focus,
+select:focus {
   outline: none;
   border-color: #ff4b5c;
   box-shadow: 0 0 5px #ff4b5c;
@@ -253,13 +381,17 @@ button {
   box-sizing: border-box;
   transition: background 0.3s, box-shadow 0.3s;
 }
-button:hover {
+button:hover:not([disabled]) {
   background-color: #ff1f38;
   box-shadow: 0 2px 7px rgba(255, 31, 56, 0.3);
 }
+button:disabled {
+  background-color: #ccc;
+  cursor: not-allowed;
+}
 button[style] {
   margin-top: 10px;
-  background-color: #ccc;
+  background-color: #ccc !important;
   color: #333;
   font-size: 1rem;
   padding: 8px 0;
@@ -269,23 +401,21 @@ p {
   margin-top: 10px;
   line-height: 1.4;
 }
-div[v-if] {
-  font-weight: 700;
-  font-size: 0.9rem;
-  margin-top: 11px;
-  color: #d32f2f;
-}
 h2 {
-  font-size: 1.2rem;
-  margin-bottom: 10px;
+  font-size: 1.3rem;
+  margin-bottom: 15px;
   text-align: center;
+  color: #333;
 }
 h3 {
-  font-size: 1rem;
+  font-size: 1.1rem;
   margin-top: 18px;
-  margin-bottom: 5px;
+  margin-bottom: 10px;
   color: #444;
   text-align: center;
+}
+.sorteios-list {
+  margin-top: 15px;
 }
 table {
   width: 100%;
@@ -299,11 +429,13 @@ table {
 }
 th,
 td {
-  border-bottom: 1px solid #eee;
-  padding: 5px 4px;
+  border-bottom: 1px solid #333;
+  padding: 8px 6px;
+  text-align: left;
 }
 th {
-  background: #000000;
+  background: #1a1a1a;
+  font-weight: bold;
 }
 @media (max-width: 500px) {
   .admin-container {
@@ -311,6 +443,12 @@ th {
     margin: 16px auto 0 auto !important;
     padding: 5vw 3vw !important;
   }
-  /* Outros ajustes de responsividade podem ser adicionados aqui */
+  table {
+    font-size: 0.8rem;
+  }
+  th,
+  td {
+    padding: 6px 4px;
+  }
 }
 </style>
