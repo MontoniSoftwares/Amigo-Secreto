@@ -18,7 +18,12 @@
         rows="3"
       ></textarea>
       <button @click="criarSorteio">Criar Sorteio</button>
-      <p v-if="mensagem">{{ mensagem }}</p>
+      <p
+        v-if="mensagem"
+        :style="mensagem.includes('Erro') ? 'color: red' : 'color: green'"
+      >
+        {{ mensagem }}
+      </p>
       <button
         @click="logout"
         style="margin-top: 10px; background-color: #ccc; color: #333"
@@ -123,8 +128,8 @@ export default {
       return senha;
     }
 
-    function copiarSenha(senha) {
-      navigator.clipboard.writeText(senha);
+    function copiarSenha(senhaParam) {
+      navigator.clipboard.writeText(senhaParam);
       mensagem.value = "Senha copiada!";
       setTimeout(() => (mensagem.value = ""), 2000);
     }
@@ -134,7 +139,7 @@ export default {
       senhasGeradas.value.forEach((p) => {
         csv += `"${p.nome}","${p.senha}"\n`;
       });
-      const blob = new Blob([csv], { type: "text/csv" });
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -148,13 +153,19 @@ export default {
         mensagem.value = "Informe um nome para o sorteio";
         return;
       }
+
       let participantesArr = participantes.value
         .split(",")
         .map((x) => x.trim())
-        .filter((x) => !!x);
+        .filter((x) => x.length > 1);
 
       if (participantesArr.length < 2) {
-        mensagem.value = "Informe ao menos 2 participantes";
+        mensagem.value = "Informe ao menos 2 participantes únicos";
+        return;
+      }
+
+      if (new Set(participantesArr).size !== participantesArr.length) {
+        mensagem.value = "Nomes duplicados não são permitidos";
         return;
       }
 
@@ -311,6 +322,5 @@ th {
     margin: 16px auto 0 auto !important;
     padding: 5vw 3vw !important;
   }
-  /* Outros ajustes de responsividade podem ser adicionados aqui */
 }
 </style>

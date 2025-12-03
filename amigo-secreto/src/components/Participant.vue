@@ -110,8 +110,11 @@ export default {
       erro.value = "";
       senhaDigitada.value = "";
       participantes.value = [];
+
       if (!sorteioSelecionado.value) return;
+
       try {
+        // ✅ Carrega só os nomes dos participantes (sem senhas)
         const resultadosCol = collection(
           db,
           "sorteios",
@@ -119,9 +122,9 @@ export default {
           "resultados"
         );
         const resultadosSnap = await getDocs(resultadosCol);
-        participantes.value = resultadosSnap.docs.map(
-          (doc) => doc.data().participante
-        );
+        participantes.value = resultadosSnap.docs
+          .map((doc) => doc.data().participante)
+          .sort();
       } catch (e) {
         erro.value = "Erro ao carregar participantes: " + e.message;
       }
@@ -208,7 +211,9 @@ export default {
         erro.value = "Preencha todos os campos!";
         return;
       }
+
       try {
+        // ✅ VERIFICAÇÃO SEGURA: nome + senha
         const resultadoDoc = doc(
           db,
           "sorteios",
@@ -380,8 +385,6 @@ button:hover:not(:disabled) {
   font-weight: bold;
   margin-top: 5px;
 }
-
-/* RESPONSIVIDADE */
 @media (max-width: 600px) {
   .container,
   .card,
@@ -397,7 +400,6 @@ button:hover:not(:disabled) {
   .card {
     margin-bottom: 18px !important;
   }
-  /* Para div inline com max-width: 200px */
   div[style*="max-width: 200px"] {
     max-width: 96vw !important;
     width: 96vw !important;
