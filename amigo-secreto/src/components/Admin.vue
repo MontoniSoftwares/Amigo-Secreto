@@ -235,8 +235,8 @@ export default {
       return senha;
     }
 
-    function copiarSenha(senha) {
-      navigator.clipboard.writeText(senha);
+    function copiarSenha(senhaParam) {
+      navigator.clipboard.writeText(senhaParam);
       mensagem.value = "Senha copiada!";
       setTimeout(() => (mensagem.value = ""), 2000);
     }
@@ -260,13 +260,19 @@ export default {
         mensagem.value = "Informe um nome para o sorteio";
         return;
       }
+
       let participantesArr = participantes.value
         .split(",")
         .map((x) => x.trim())
-        .filter((x) => !!x);
+        .filter((x) => x.length > 1);
 
       if (participantesArr.length < 2) {
-        mensagem.value = "Informe ao menos 2 participantes";
+        mensagem.value = "Informe ao menos 2 participantes únicos";
+        return;
+      }
+
+      if (new Set(participantesArr).size !== participantesArr.length) {
+        mensagem.value = "Nomes duplicados não são permitidos";
         return;
       }
 
